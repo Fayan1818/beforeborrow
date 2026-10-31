@@ -1,0 +1,1 @@
+export default function ModelInspectorPage() { return <div>Model Inspector Page</div>; }

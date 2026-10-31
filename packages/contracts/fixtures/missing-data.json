@@ -1,0 +1,33 @@
+{
+  "_fixture": "missing-data",
+  "_description": "Income timing unknown - engine must return insufficient_data for affected comparisons.",
+  "profile": {
+    "opening_cash_paise": 1500000,
+    "balance_as_of": "2026-11-01",
+    "reserve_floor_paise": 500000,
+    "currency": "INR",
+    "timezone": "Asia/Kolkata"
+  },
+  "income": [
+    { "amount_paise": 5000000, "due_date": null, "frequency": "monthly", "timing": "estimated" }
+  ],
+  "expenses": [],
+  "obligations": [],
+  "scenario": {
+    "expense_amount_paise": 1000000,
+    "expense_date": "2026-11-20",
+    "need_cash": true,
+    "allowed_savings_paise": 0,
+    "horizon_days": 60
+  },
+  "offers": [
+    {
+      "type": "term_loan",
+      "principal_paise": 1000000,
+      "fees_paise": 50000,
+      "rate_annual_pct": "18.00",
+      "term_months": 6
+    }
+  ],
+  "expected_result": "insufficient_data"
+}

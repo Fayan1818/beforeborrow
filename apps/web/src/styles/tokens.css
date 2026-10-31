@@ -1,0 +1,32 @@
+/**
+ * BeforeBorrow design tokens.
+ * Owner: A
+ *
+ * Colors always accompany text or icons (never color-only meaning).
+ * 8px spacing scale. 12px border-radius.
+ */
+:root {
+  /* Colors */
+  --color-text:        #0f172a; /* Navy */
+  --color-primary:     #0d9488; /* Teal */
+  --color-caution:     #f59e0b; /* Amber */
+  --color-shortfall:   #ef4444; /* Red */
+  --color-bg:          #ffffff; /* White cards */
+  --color-bg-muted:    #f8fafc;
+  --color-border:      #e2e8f0;
+
+  /* Spacing (8px scale) */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-6: 48px;
+
+  /* Radius */
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  /* Typography */
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, monospace;
+}

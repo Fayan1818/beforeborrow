@@ -1,0 +1,95 @@
+{
+  "_fixture": "checked-example",
+  "_description": "Page 12 synthetic verified fixture: 0% BNPL can still hurt due to timing squeeze.",
+  "profile": {
+    "opening_cash_paise": 2400000,
+    "balance_as_of": "2026-11-01",
+    "reserve_floor_paise": 500000,
+    "currency": "INR",
+    "timezone": "Asia/Kolkata"
+  },
+  "income": [
+    {
+      "amount_paise": 3000000,
+      "due_date": "2026-11-07",
+      "frequency": "monthly",
+      "timing": "known",
+      "category": "salary"
+    }
+  ],
+  "expenses": [
+    {
+      "amount_paise": 800000,
+      "due_date": "2026-11-03",
+      "frequency": "monthly",
+      "category": "rent"
+    },
+    {
+      "amount_paise": 700000,
+      "due_date": "2026-11-12",
+      "frequency": "once",
+      "category": "education_fee"
+    },
+    {
+      "amount_paise": 300000,
+      "due_date": "2026-11-18",
+      "frequency": "monthly",
+      "category": "card_bill"
+    },
+    {
+      "amount_paise": 500000,
+      "due_date": "2026-11-20",
+      "frequency": "monthly",
+      "category": "living_costs"
+    }
+  ],
+  "obligations": [
+    {
+      "provider_alias": "Existing Bank EMI",
+      "kind": "term_loan",
+      "principal_remaining_paise": 4800000,
+      "payments": [
+        {
+          "due_date": "2026-11-05",
+          "amount_paise": 400000,
+          "payment_status": "scheduled"
+        },
+        {
+          "due_date": "2026-12-05",
+          "amount_paise": 400000,
+          "payment_status": "scheduled"
+        }
+      ]
+    }
+  ],
+  "scenario": {
+    "expense_amount_paise": 3000000,
+    "expense_date": "2026-11-01",
+    "need_cash": false,
+    "allowed_savings_paise": 600000,
+    "horizon_days": 180
+  },
+  "offers": [
+    {
+      "offer_id": "bnpl-4-pay",
+      "offer_type": "bnpl",
+      "principal_paise": 2400000,
+      "fees_paise": 0,
+      "rate_annual_pct": "0.00",
+      "term_months": 2,
+      "schedule": [
+        { "due_date": "2026-11-01", "amount_paise": 600000 },
+        { "due_date": "2026-11-15", "amount_paise": 600000 },
+        { "due_date": "2026-12-01", "amount_paise": 600000 },
+        { "due_date": "2026-12-15", "amount_paise": 600000 }
+      ]
+    }
+  ],
+  "expected_invariants": {
+    "credit_benefit_paise": 2400000,
+    "financing_cost_paise": 0,
+    "first_reserve_breach": "2026-11-03",
+    "normal_first_negative_balance": "2026-12-03",
+    "delayed_salary_first_negative_balance": "2026-11-12"
+  }
+}

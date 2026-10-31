@@ -1,0 +1,1 @@
+export default function DecisionPage() { return <div>Decision Page</div>; }

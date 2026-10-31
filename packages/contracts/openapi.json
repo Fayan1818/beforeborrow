@@ -1,0 +1,9 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BeforeBorrow API",
+    "version": "0.1.0",
+    "description": "Decision-support API. Regenerate this file from the running FastAPI app."
+  },
+  "paths": {}
+}

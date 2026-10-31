@@ -1,0 +1,35 @@
+{
+  "_fixture": "timing-trap",
+  "_description": "Salary arrives on 30th; EMI due on 5th - cash briefly goes negative before income arrives.",
+  "profile": {
+    "opening_cash_paise": 800000,
+    "balance_as_of": "2026-11-01",
+    "reserve_floor_paise": 500000,
+    "currency": "INR",
+    "timezone": "Asia/Kolkata"
+  },
+  "income": [
+    { "amount_paise": 7500000, "due_date": "2026-11-30", "frequency": "monthly", "timing": "known" }
+  ],
+  "expenses": [
+    { "amount_paise": 1200000, "due_date": "2026-11-05", "frequency": "monthly", "category": "rent" }
+  ],
+  "obligations": [
+    {
+      "kind": "term_loan",
+      "principal_remaining_paise": 12000000,
+      "payments": [
+        { "due_date": "2026-11-05", "amount_paise": 1500000 },
+        { "due_date": "2026-12-05", "amount_paise": 1500000 }
+      ]
+    }
+  ],
+  "scenario": {
+    "expense_amount_paise": 2000000,
+    "expense_date": "2026-11-08",
+    "need_cash": true,
+    "allowed_savings_paise": 0,
+    "horizon_days": 90
+  },
+  "offers": []
+}

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+.env
+*.env.local
+
+# Node
+node_modules/
+dist/
+.env
+.env.local
+
+# DB / secrets
+*.sqlite
+*.dump
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,35 @@
+{
+  "_fixture": "thin-buffer",
+  "_description": "Tight cashflow scenario: reserve barely maintained, one EMI pushes into shortfall.",
+  "profile": {
+    "opening_cash_paise": 2500000,
+    "balance_as_of": "2026-11-01",
+    "reserve_floor_paise": 1000000,
+    "currency": "INR",
+    "timezone": "Asia/Kolkata"
+  },
+  "income": [
+    { "amount_paise": 6000000, "due_date": "2026-11-30", "frequency": "monthly", "timing": "known" }
+  ],
+  "expenses": [
+    { "amount_paise": 1500000, "due_date": "2026-11-05", "frequency": "monthly", "category": "rent" },
+    { "amount_paise": 300000, "due_date": "2026-11-10", "frequency": "monthly", "category": "utilities" }
+  ],
+  "obligations": [],
+  "scenario": {
+    "expense_amount_paise": 1800000,
+    "expense_date": "2026-11-15",
+    "need_cash": false,
+    "allowed_savings_paise": 500000,
+    "horizon_days": 180
+  },
+  "offers": [
+    {
+      "type": "bnpl",
+      "principal_paise": 1800000,
+      "fees_paise": 0,
+      "rate_annual_pct": "0.00",
+      "term_months": 3
+    }
+  ]
+}
