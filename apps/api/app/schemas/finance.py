@@ -1,21 +1,46 @@
 import uuid
 from datetime import date, datetime
 from typing import Literal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, model_validator
+from typing_extensions import Self
+
+from app.engine.types import (
+    CashEvent as EngineCashEvent,
+    FinancialSnapshot as EngineFinancialSnapshot,
+)
+
+# ---------------------------------------------------------------------------
+# Common Literals
+# ---------------------------------------------------------------------------
+
+CashflowDirection = Literal["income", "expense"]
+CashflowTiming = Literal["known", "estimated"]
+CashflowFrequency = Literal["once", "weekly", "biweekly", "monthly", "quarterly", "yearly"]
+ObligationKind = Literal["bnpl", "term_loan", "card", "other"]
+ObligationStatus = Literal["active", "paid", "paused", "closed"]
+PaymentStatus = Literal["scheduled", "paid", "missed"]
+
+# ---------------------------------------------------------------------------
+# Profile Schemas
+# ---------------------------------------------------------------------------
 
 class ProfileIn(BaseModel):
-    opening_cash_paise: int
-    balance_as_of: date
-    reserve_floor_paise: int = 0
-    timezone: str = "Asia/Kolkata"
-    expected_version: int
+    opening_cash_paise: int = Field(ge=0, strict=True, description="Available bank cash in integer paise")
+    balance_as_of: date = Field(description="Date when opening cash was verified")
+    reserve_floor_paise: int = Field(default=0, ge=0, strict=True, description="Emergency reserve threshold in paise")
+    currency: str = Field(default="INR", max_length=3)
+    timezone: str = Field(default="Asia/Kolkata", max_length=64)
+    expected_version: int | None = Field(default=None, ge=1, strict=True, description="Version check for existing profile upsert")
 
-    @field_validator("opening_cash_paise", "reserve_floor_paise")
-    @classmethod
-    def non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("Amount cannot be negative")
-        return v
+
+class ProfileUpdate(BaseModel):
+    opening_cash_paise: int | None = Field(default=None, ge=0, strict=True)
+    balance_as_of: date | None = None
+    reserve_floor_paise: int | None = Field(default=None, ge=0, strict=True)
+    currency: str | None = Field(default=None, max_length=3)
+    timezone: str | None = Field(default=None, max_length=64)
+    expected_version: int = Field(ge=1, strict=True, description="Mandatory version check for optimistic concurrency")
+
 
 class ProfileOut(BaseModel):
     id: uuid.UUID
@@ -25,26 +50,55 @@ class ProfileOut(BaseModel):
     balance_as_of: date
     reserve_floor_paise: int
     data_version: int
+    created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
 
+
+# ---------------------------------------------------------------------------
+# Cashflow Rule Schemas
+# ---------------------------------------------------------------------------
+
 class CashflowRuleIn(BaseModel):
-    direction: Literal["income", "expense"]
-    category: str
-    amount_paise: int
+    direction: CashflowDirection
+    category: str = Field(min_length=1, max_length=64)
+    amount_paise: int = Field(ge=0, strict=True, description="Amount in integer paise")
     due_date: date | None = None
     start_date: date | None = None
-    frequency: str = "once"
+    frequency: CashflowFrequency = "once"
     end_date: date | None = None
-    timing: Literal["known", "estimated"] = "known"
+    timing: CashflowTiming = "known"
+    source: str = Field(default="manual", max_length=32)
 
-    @field_validator("amount_paise")
-    @classmethod
-    def non_negative(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("Amount cannot be negative")
-        return v
+    @model_validator(mode="after")
+    def validate_dates(self) -> Self:
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be earlier than start_date")
+        return self
+
+
+class CashflowRuleUpdate(BaseModel):
+    expected_data_version: int = Field(
+        ge=1,
+        description="Expected profile data_version for optimistic concurrency control",
+    )
+    direction: CashflowDirection | None = None
+    category: str | None = Field(default=None, min_length=1, max_length=64)
+    amount_paise: int | None = Field(default=None, ge=0, strict=True)
+    due_date: date | None = None
+    start_date: date | None = None
+    frequency: CashflowFrequency | None = None
+    end_date: date | None = None
+    timing: CashflowTiming | None = None
+    source: str | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> Self:
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be earlier than start_date")
+        return self
+
 
 class CashflowRuleOut(BaseModel):
     id: uuid.UUID
@@ -62,29 +116,62 @@ class CashflowRuleOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+# ---------------------------------------------------------------------------
+# Obligation Payment Schemas
+# ---------------------------------------------------------------------------
+
 class ObligationPaymentIn(BaseModel):
     due_date: date
-    amount_paise: int
-    interest_paise: int = 0
-    fee_paise: int = 0
+    amount_paise: int = Field(ge=0, strict=True)
+    interest_paise: int = Field(default=0, ge=0, strict=True)
+    fee_paise: int = Field(default=0, ge=0, strict=True)
+    payment_status: PaymentStatus = "scheduled"
+    actual_paid_date: date | None = None
 
-class ObligationIn(BaseModel):
-    provider_alias: str
-    kind: Literal["bnpl", "term_loan", "card", "other"]
-    principal_remaining_paise: int
-    payments: list[ObligationPaymentIn] = []
-    expected_version: int | None = None
 
 class ObligationPaymentOut(BaseModel):
     id: uuid.UUID
+    obligation_id: uuid.UUID
+    owner_id: uuid.UUID
     due_date: date
     amount_paise: int
     interest_paise: int
     fee_paise: int
     payment_status: str
     actual_paid_date: date | None
+    created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Obligation Schemas
+# ---------------------------------------------------------------------------
+
+class ObligationIn(BaseModel):
+    provider_alias: str = Field(min_length=1, max_length=128)
+    kind: ObligationKind
+    principal_remaining_paise: int = Field(ge=0, strict=True)
+    status: ObligationStatus = "active"
+    source: str = Field(default="manual", max_length=32)
+    source_ref: str | None = Field(default=None, max_length=256)
+    source_as_of: date | None = None
+    payments: list[ObligationPaymentIn] = Field(default_factory=list)
+    expected_version: int | None = Field(default=None, ge=1, strict=True)
+
+
+class ObligationUpdate(BaseModel):
+    provider_alias: str | None = Field(default=None, min_length=1, max_length=128)
+    kind: ObligationKind | None = None
+    principal_remaining_paise: int | None = Field(default=None, ge=0, strict=True)
+    status: ObligationStatus | None = None
+    source: str | None = Field(default=None, max_length=32)
+    source_ref: str | None = Field(default=None, max_length=256)
+    source_as_of: date | None = None
+    payments: list[ObligationPaymentIn] | None = None
+    expected_version: int = Field(ge=1, strict=True, description="Mandatory version check for optimistic concurrency")
+
 
 class ObligationOut(BaseModel):
     id: uuid.UUID
@@ -93,8 +180,147 @@ class ObligationOut(BaseModel):
     principal_remaining_paise: int
     status: str
     source: str
+    source_ref: str | None
+    source_as_of: date | None
+    confirmed_at: datetime | None
     version: int
-    payments: list[ObligationPaymentOut]
+    payments: list[ObligationPaymentOut] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Goal Schemas
+# ---------------------------------------------------------------------------
+
+class GoalIn(BaseModel):
+    label: str = Field(min_length=1, max_length=128)
+    target_amount_paise: int = Field(ge=0, strict=True)
+    target_date: date | None = None
+    protected: bool = False
+    contribution_rule_id: uuid.UUID | None = None
+
+
+class GoalUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=128)
+    target_amount_paise: int | None = Field(default=None, ge=0, strict=True)
+    target_date: date | None = None
+    protected: bool | None = None
+    contribution_rule_id: uuid.UUID | None = None
+
+
+class GoalOut(BaseModel):
+    id: uuid.UUID
+    label: str
+    target_amount_paise: int
+    target_date: date | None
+    protected: bool
+    contribution_rule_id: uuid.UUID | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Import Batch Schemas
+# ---------------------------------------------------------------------------
+
+class ImportBatchOut(BaseModel):
+    id: uuid.UUID
+    file_hash: str
+    status: str
+    preview_json: dict | list | None = None
+    errors_json: dict | list | None = None
+    committed_at: datetime | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Financial Snapshot Schemas (Matches app.engine.types.FinancialSnapshot)
+# ---------------------------------------------------------------------------
+
+class SnapshotPayment(BaseModel):
+    id: uuid.UUID
+    due_date: date
+    amount_paise: int
+    interest_paise: int
+    fee_paise: int
+    payment_status: str
+
+    model_config = {"from_attributes": True}
+
+
+class SnapshotObligation(BaseModel):
+    id: uuid.UUID
+    provider_alias: str
+    kind: str
+    principal_remaining_paise: int
+    payments: list[SnapshotPayment] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class SnapshotIncomeRule(BaseModel):
+    id: uuid.UUID
+    category: str
+    amount_paise: int
+    due_date: date | None
+    start_date: date | None
+    frequency: str
+    end_date: date | None
+    timing: str
+
+    model_config = {"from_attributes": True}
+
+
+class SnapshotExpenseRule(BaseModel):
+    id: uuid.UUID
+    category: str
+    amount_paise: int
+    due_date: date | None
+    start_date: date | None
+    frequency: str
+    end_date: date | None
+    timing: str
+
+    model_config = {"from_attributes": True}
+
+
+class SnapshotGoal(BaseModel):
+    id: uuid.UUID
+    label: str
+    target_amount_paise: int
+    target_date: date | None
+    protected: bool
+    contribution_rule_id: uuid.UUID | None
+
+    model_config = {"from_attributes": True}
+
+
+class FinancialSnapshotSchema(BaseModel):
+    opening_cash_paise: int
+    balance_as_of: date
+    reserve_floor_paise: int
+    income_rules: list[SnapshotIncomeRule] = Field(default_factory=list)
+    expense_rules: list[SnapshotExpenseRule] = Field(default_factory=list)
+    obligations: list[SnapshotObligation] = Field(default_factory=list)
+    goals: list[SnapshotGoal] = Field(default_factory=list)
+    data_version: int
+
+    model_config = {"from_attributes": True}
+
+    def to_engine_snapshot(self) -> EngineFinancialSnapshot:
+        """Convert normalized Pydantic schema to immutable Engine FinancialSnapshot dataclass."""
+        return EngineFinancialSnapshot(
+            opening_cash_paise=self.opening_cash_paise,
+            balance_as_of=self.balance_as_of,
+            reserve_floor_paise=self.reserve_floor_paise,
+            income_rules=tuple(self.income_rules),
+            expense_rules=tuple(self.expense_rules),
+            obligations=tuple(self.obligations),
+            goals=tuple(self.goals),
+            data_version=self.data_version,
+        )
