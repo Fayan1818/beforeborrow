@@ -37,3 +37,12 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=422,
             content=_error_body("VALIDATION_ERROR", "Input validation failed", rid, fields),
         )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        rid = getattr(request.state, "request_id", "")
+        # Internal database exceptions and unexpected errors never leak to clients
+        return JSONResponse(
+            status_code=500,
+            content=_error_body("INTERNAL_SERVER_ERROR", "An unexpected internal server error occurred.", rid),
+        )

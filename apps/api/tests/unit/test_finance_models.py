@@ -21,18 +21,20 @@ from app.models.finance import (
 
 
 def test_alembic_migration_chain():
-    """Verify that Alembic recognizes 002_finance as the single head chained to 001_identity."""
+    """Verify that Alembic recognizes 003_import_commit as the single head chained to 002_finance and 001_identity."""
     cfg = Config("alembic.ini")
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
-    assert heads == ["002_finance"]
+    assert heads == ["003_import_commit"]
 
     revisions = list(script.walk_revisions())
-    assert len(revisions) == 2
-    assert revisions[0].revision == "002_finance"
-    assert revisions[0].down_revision == "001_identity"
-    assert revisions[1].revision == "001_identity"
-    assert revisions[1].down_revision is None
+    assert len(revisions) == 3
+    assert revisions[0].revision == "003_import_commit"
+    assert revisions[0].down_revision == "002_finance"
+    assert revisions[1].revision == "002_finance"
+    assert revisions[1].down_revision == "001_identity"
+    assert revisions[2].revision == "001_identity"
+    assert revisions[2].down_revision is None
 
 
 def test_monetary_columns_use_bigint():

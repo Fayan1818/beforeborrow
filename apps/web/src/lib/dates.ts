@@ -9,13 +9,13 @@
  */
 const TIMEZONE = 'Asia/Kolkata'
 
-/**
- * Format a YYYY-MM-DD financial date for display.
- * Example: "2026-11-05" → "5 Nov 2026"
- */
-export function formatFinancialDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split('-').map(Number)
-  const d = new Date(Date.UTC(year, month - 1, day))
+export function formatFinancialDate(isoDate: string | null | undefined): string {
+  if (!isoDate || typeof isoDate !== 'string') return '—'
+  const parts = isoDate.split('-')
+  if (parts.length < 3) return isoDate
+  const [year, month, day] = parts.map(Number)
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return isoDate
+  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
   return new Intl.DateTimeFormat('en-IN', {
     day: 'numeric',
     month: 'short',
@@ -44,4 +44,29 @@ export function formatTimestamp(isoUtc: string): string {
  */
 export function todayISO(): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: TIMEZONE }).format(new Date())
+}
+
+/**
+ * Return { from: "YYYY-MM-01", to: "YYYY-MM-DD" } for a given 1-indexed month and year.
+ */
+export function getMonthRange(year: number, month: number): { from: string; to: string } {
+  const mm = String(month).padStart(2, '0')
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const dd = String(lastDay).padStart(2, '0')
+  return {
+    from: `${year}-${mm}-01`,
+    to: `${year}-${mm}-${dd}`,
+  }
+}
+
+/**
+ * Format Year and 1-indexed Month (e.g., 2026, 11) as "November 2026".
+ */
+export function formatMonthYear(year: number, month: number): string {
+  const d = new Date(Date.UTC(year, month - 1, 15, 12, 0, 0))
+  return new Intl.DateTimeFormat('en-IN', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: TIMEZONE,
+  }).format(d)
 }

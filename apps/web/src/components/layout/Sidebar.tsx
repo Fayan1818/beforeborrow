@@ -4,11 +4,13 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/obligations', label: 'Obligations' },
   { to: '/calendar', label: 'Calendar' },
+  { to: '/imports', label: 'CSV Import' },
   { to: '/decision/new', label: 'New Decision' },
   { to: '/alerts', label: 'Alerts' },
   { to: '/profile', label: 'Profile' },
   { to: '/settings', label: 'Settings' },
 ]
+
 
 export function Sidebar() {
   return (

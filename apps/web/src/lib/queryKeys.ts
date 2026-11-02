@@ -13,9 +13,15 @@ export const queryKeys = {
   cashflowRules: (userId: string) => [userId, 'cashflow-rules'] as const,
 
   obligations: (userId: string) => [userId, 'obligations'] as const,
+  obligation: (userId: string, id: string) => [userId, 'obligations', id] as const,
 
   calendar: (userId: string, from: string, to: string) =>
     [userId, 'calendar', from, to] as const,
+
+  imports: (userId: string) => [userId, 'imports'] as const,
+  importBatch: (userId: string, batchId: string) => [userId, 'imports', batchId] as const,
+
+  financialSnapshot: (userId: string) => [userId, 'financial-snapshot'] as const,
 
   scenarios: (userId: string) => [userId, 'scenarios'] as const,
   scenario: (userId: string, id: string) => [userId, 'scenarios', id] as const,

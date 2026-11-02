@@ -17,8 +17,8 @@ CashflowDirection = Literal["income", "expense"]
 CashflowTiming = Literal["known", "estimated"]
 CashflowFrequency = Literal["once", "weekly", "biweekly", "monthly", "quarterly", "yearly"]
 ObligationKind = Literal["bnpl", "term_loan", "card", "other"]
-ObligationStatus = Literal["active", "paid", "paused", "closed"]
-PaymentStatus = Literal["scheduled", "paid", "missed"]
+ObligationStatus = Literal["active", "paid", "paused", "closed", "defaulted"]
+PaymentStatus = Literal["planned", "scheduled", "paid", "missed", "cancelled", "disputed"]
 
 # ---------------------------------------------------------------------------
 # Profile Schemas
@@ -129,6 +129,23 @@ class ObligationPaymentIn(BaseModel):
     payment_status: PaymentStatus = "scheduled"
     actual_paid_date: date | None = None
 
+    @model_validator(mode="after")
+    def validate_payment_status_and_date(self) -> Self:
+        if self.payment_status != "paid" and self.actual_paid_date is not None:
+            raise ValueError("actual_paid_date cannot be set for non-paid payments")
+        return self
+
+
+class PaymentStatusUpdate(BaseModel):
+    payment_status: PaymentStatus
+    actual_paid_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_payment_status_and_date(self) -> Self:
+        if self.payment_status != "paid" and self.actual_paid_date is not None:
+            raise ValueError("actual_paid_date cannot be set for non-paid payments")
+        return self
+
 
 class ObligationPaymentOut(BaseModel):
     id: uuid.UUID
@@ -232,10 +249,61 @@ class ImportBatchOut(BaseModel):
     status: str
     preview_json: dict | list | None = None
     errors_json: dict | list | None = None
+    idempotency_key: str | None = None
+    result_json: dict | list | None = None
     committed_at: datetime | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CSVRowPreview(BaseModel):
+    row_id: str
+    row_index: int
+    provider_alias: str
+    external_ref: str
+    kind: str
+    due_date: date | None = None
+    amount_paise: int | None = None
+    amount_inr_raw: str
+    status: str
+    is_valid: bool
+    match_status: str  # "MATCHED", "UNMATCHED_OBLIGATION", "EXACT_DUPLICATE_FILE", "EXACT_DUPLICATE_DB", "POSSIBLE_DUPLICATE_DB"
+    matched_obligation_id: str | None = None
+    duplicate_reason: str | None = None
+    display_provider_alias: str | None = None
+    display_external_ref: str | None = None
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ImportPreviewResult(BaseModel):
+    import_batch_id: uuid.UUID
+    file_hash: str
+    total_rows: int
+    valid_rows_count: int
+    invalid_rows_count: int
+    exact_duplicates_count: int
+    possible_duplicates_count: int
+    unmatched_count: int
+    rows: list[CSVRowPreview] = Field(default_factory=list)
+    file_errors: list[str] = Field(default_factory=list)
+
+
+class ImportCommitRequest(BaseModel):
+    batch_id: uuid.UUID
+    idempotency_key: str = Field(min_length=1, max_length=64)
+    selected_row_ids: list[str] = Field(default_factory=list)
+    obligation_mappings: dict[str, uuid.UUID] = Field(default_factory=dict)
+
+
+class ImportCommitResult(BaseModel):
+    batch_id: uuid.UUID
+    status: str
+    idempotent_replay: bool
+    committed_count: int
+    committed_payment_ids: list[uuid.UUID] = Field(default_factory=list)
+    data_version: int
 
 
 # ---------------------------------------------------------------------------
@@ -324,3 +392,17 @@ class FinancialSnapshotSchema(BaseModel):
             goals=tuple(self.goals),
             data_version=self.data_version,
         )
+
+
+class SnapshotDataQualityOut(BaseModel):
+    is_valid: bool
+    data_version: int | None
+    blocking_gaps: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    summary: str
+    # NOTE: quality_score is omitted to prevent exposing internal metrics to users.
+
+
+class SnapshotOut(BaseModel):
+    snapshot: FinancialSnapshotSchema | None = None
+    data_quality: SnapshotDataQualityOut

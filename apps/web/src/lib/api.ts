@@ -35,9 +35,21 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
+  // Development-only UI Preview Mode: intercept requests under /__preview
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    const isPreviewPath = window.location.pathname.startsWith('/__preview')
+    const { previewMockApi } = await import('@/features/preview/previewMockApi')
+    if (isPreviewPath || previewMockApi.isActive) {
+      return previewMockApi.handleRequest<T>(method, path, body)
+    }
+  }
+
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     'Accept': 'application/json',
+  }
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json'
   }
 
   // CSRF token is retrieved from auth/me and stored per session
@@ -50,7 +62,7 @@ async function request<T>(
     method,
     headers,
     credentials: 'include',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isFormData ? (body as FormData) : body !== undefined ? JSON.stringify(body) : undefined,
     signal,
   })
 
@@ -74,6 +86,8 @@ async function request<T>(
 export const api = {
   get: <T>(path: string, signal?: AbortSignal) => request<T>('GET', path, undefined, signal),
   post: <T>(path: string, body: unknown, signal?: AbortSignal) => request<T>('POST', path, body, signal),
+  postForm: <T>(path: string, formData: FormData, signal?: AbortSignal) =>
+    request<T>('POST', path, formData, signal),
   put: <T>(path: string, body: unknown, signal?: AbortSignal) => request<T>('PUT', path, body, signal),
   patch: <T>(path: string, body: unknown, signal?: AbortSignal) => request<T>('PATCH', path, body, signal),
   delete: <T>(path: string, signal?: AbortSignal) => request<T>('DELETE', path, undefined, signal),

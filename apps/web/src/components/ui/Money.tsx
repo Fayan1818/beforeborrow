@@ -1,19 +1,16 @@
+import { formatPaise, parseRupeesToPaise } from '@/lib/money'
+
 interface MoneyProps {
   paise: number
   shortfall?: boolean
   className?: string
+  showDecimals?: boolean
 }
 
-const formatter = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  maximumFractionDigits: 0,
-})
-
-export function Money({ paise, shortfall = false, className }: MoneyProps) {
+export function Money({ paise, shortfall = false, className, showDecimals = false }: MoneyProps) {
   if (!Number.isFinite(paise)) return <span className={className}>—</span>
 
-  const display = formatter.format(paise / 100)
+  const display = formatPaise(paise, showDecimals)
   const style = shortfall && paise < 0 ? { color: 'var(--color-shortfall)' } : undefined
 
   return (
@@ -24,7 +21,5 @@ export function Money({ paise, shortfall = false, className }: MoneyProps) {
 }
 
 export function rupeesToPaise(rupees: string): number {
-  const n = parseFloat(rupees.replace(/,/g, ''))
-  if (!Number.isFinite(n)) throw new Error('Invalid amount')
-  return Math.round(n * 100)
+  return parseRupeesToPaise(rupees)
 }

@@ -15,9 +15,13 @@ import DashboardPage from '@/features/dashboard/pages/DashboardPage'
 import ProfilePage from '@/features/profile/pages/ProfilePage'
 import ObligationsPage from '@/features/obligations/pages/ObligationsPage'
 import CalendarPage from '@/features/calendar/pages/CalendarPage'
+import ImportsPage from '@/features/imports/pages/ImportsPage'
 import DecisionPage from '@/features/decision/pages/DecisionPage'
 import ReportsPage from '@/features/reports/pages/ReportsPage'
 import AlertsPage from '@/features/alerts/pages/AlertsPage'
+
+import { PreviewShell, PreviewIndexRedirect } from '@/features/preview/PreviewShell'
+import { PreviewSnapshotView } from '@/features/preview/PreviewSnapshotView'
 
 // Simple placeholders for Landing, Demo, Settings
 const LandingPage = () => (
@@ -29,7 +33,25 @@ const LandingPage = () => (
 const DemoPage = () => <div style={{ padding: 32 }}>Demo Walkthrough</div>
 const SettingsPage = () => <div style={{ padding: 32 }}>User Settings</div>
 
+const devPreviewRoutes = import.meta.env.DEV
+  ? [
+      {
+        path: '/__preview',
+        element: <PreviewShell />,
+        children: [
+          { index: true, element: <PreviewIndexRedirect /> },
+          { path: 'profile', element: <ProfilePage /> },
+          { path: 'obligations', element: <ObligationsPage /> },
+          { path: 'calendar', element: <CalendarPage /> },
+          { path: 'imports', element: <ImportsPage /> },
+          { path: 'snapshot', element: <PreviewSnapshotView /> },
+        ],
+      },
+    ]
+  : []
+
 export const router = createBrowserRouter([
+  ...devPreviewRoutes,
   { path: '/', element: <LandingPage /> },
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
@@ -45,6 +67,7 @@ export const router = createBrowserRouter([
       { path: '/profile', element: <ProfilePage /> },
       { path: '/obligations', element: <ObligationsPage /> },
       { path: '/calendar', element: <CalendarPage /> },
+      { path: '/imports', element: <ImportsPage /> },
       { path: '/decision/new', element: <DecisionPage /> },
       { path: '/decision/:id', element: <DecisionPage /> },
       { path: '/reports/:id', element: <ReportsPage /> },

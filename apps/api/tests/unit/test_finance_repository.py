@@ -481,3 +481,130 @@ def test_import_batches_lifecycle(repo: FinanceRepository, two_users: tuple[User
     assert updated_batch is not None
     assert updated_batch.status == "committed"
     assert updated_batch.committed_at is not None
+
+
+def test_payment_status_transitions_and_actual_paid_date_semantics(repo: FinanceRepository, two_users: tuple[User, User]):
+    """
+    Test all payment status transitions:
+    - paid -> planned
+    - paid -> scheduled
+    - paid -> missed
+    - paid -> cancelled
+    - paid -> disputed
+    - Non-paid payment with supplied actual_paid_date raises ValueError.
+    - Paid payment without supplied actual_paid_date defaults to Asia/Kolkata date.
+    - Outstanding principal remains unchanged across all transitions.
+    """
+    from app.repositories.finance import KOLKATA_TZ, get_kolkata_today
+    u1, _ = two_users
+
+    # Establish profile
+    run_async(repo.upsert_profile(u1.id, ProfileIn(opening_cash_paise=10000, balance_as_of=date(2026, 11, 1))))
+
+    # Create obligation with initial principal 500,000 paise
+    ob = run_async(repo.create_obligation(
+        u1.id,
+        ObligationIn(
+            provider_alias="Bank Loan",
+            kind="term_loan",
+            principal_remaining_paise=500000,
+            payments=[],
+        ),
+    ))
+    ob_id = ob.id
+
+    # Create payment as paid with explicit date
+    explicit_date = date(2026, 11, 5)
+    pay = run_async(repo.create_obligation_payment(
+        u1.id,
+        ob_id,
+        due_date=date(2026, 11, 15),
+        amount_paise=100000,
+        payment_status="paid",
+        actual_paid_date=explicit_date,
+    ))
+    assert pay.payment_status == "paid"
+    assert pay.actual_paid_date == explicit_date
+
+    # 1. paid -> planned (clears actual_paid_date)
+    p_planned = run_async(repo.update_payment_status(u1.id, pay.id, "planned"))
+    assert p_planned.payment_status == "planned"
+    assert p_planned.actual_paid_date is None
+
+    # planned -> paid (no date supplied -> defaults to get_kolkata_today())
+    today_ist = get_kolkata_today()
+    p_paid1 = run_async(repo.update_payment_status(u1.id, pay.id, "paid"))
+    assert p_paid1.payment_status == "paid"
+    assert p_paid1.actual_paid_date == today_ist
+
+    # 2. paid -> scheduled (clears actual_paid_date)
+    p_sched = run_async(repo.update_payment_status(u1.id, pay.id, "scheduled"))
+    assert p_sched.payment_status == "scheduled"
+    assert p_sched.actual_paid_date is None
+
+    # scheduled -> paid (defaults to get_kolkata_today())
+    p_paid2 = run_async(repo.update_payment_status(u1.id, pay.id, "paid"))
+    assert p_paid2.payment_status == "paid"
+    assert p_paid2.actual_paid_date == today_ist
+
+    # 3. paid -> missed (clears actual_paid_date)
+    p_missed = run_async(repo.update_payment_status(u1.id, pay.id, "missed"))
+    assert p_missed.payment_status == "missed"
+    assert p_missed.actual_paid_date is None
+
+    # missed -> paid (defaults to get_kolkata_today())
+    p_paid3 = run_async(repo.update_payment_status(u1.id, pay.id, "paid"))
+    assert p_paid3.payment_status == "paid"
+    assert p_paid3.actual_paid_date == today_ist
+
+    # 4. paid -> cancelled (clears actual_paid_date)
+    p_cancelled = run_async(repo.update_payment_status(u1.id, pay.id, "cancelled"))
+    assert p_cancelled.payment_status == "cancelled"
+    assert p_cancelled.actual_paid_date is None
+
+    # cancelled -> paid (defaults to get_kolkata_today())
+    p_paid4 = run_async(repo.update_payment_status(u1.id, pay.id, "paid"))
+    assert p_paid4.payment_status == "paid"
+    assert p_paid4.actual_paid_date == today_ist
+
+    # 5. paid -> disputed (clears actual_paid_date)
+    p_disputed = run_async(repo.update_payment_status(u1.id, pay.id, "disputed"))
+    assert p_disputed.payment_status == "disputed"
+    assert p_disputed.actual_paid_date is None
+
+    # 6. Reject non-paid status when actual_paid_date is supplied
+    for non_paid in ("planned", "scheduled", "missed", "cancelled", "disputed"):
+        with pytest.raises(ValueError) as exc_info:
+            run_async(repo.update_payment_status(u1.id, pay.id, non_paid, actual_paid_date=date(2026, 11, 10)))
+        assert "cannot be set for non-paid payments" in str(exc_info.value)
+
+    # Reject creating non-paid payment with supplied actual_paid_date
+    with pytest.raises(ValueError):
+        run_async(repo.create_obligation_payment(
+            u1.id,
+            ob_id,
+            due_date=date(2026, 12, 1),
+            amount_paise=50000,
+            payment_status="scheduled",
+            actual_paid_date=date(2026, 12, 1),
+        ))
+
+    # 7. Verify outstanding principal remained completely unchanged (500000 paise)
+    ob_refreshed = run_async(repo.get_obligation(u1.id, ob_id))
+    assert ob_refreshed.principal_remaining_paise == 500000
+
+
+def test_kolkata_timezone_midnight_behavior():
+    """
+    Test Asia/Kolkata date boundary around UTC midnight:
+    UTC 18:29:59 is 23:59:59 IST (previous day in IST).
+    UTC 18:30:00 is 00:00:00 IST (crosses into new day in IST).
+    """
+    from app.repositories.finance import KOLKATA_TZ
+    # 1 second before midnight in Kolkata
+    t_before = datetime.fromisoformat("2026-11-01T18:29:59+00:00").astimezone(KOLKATA_TZ)
+    assert t_before.date() == date(2026, 11, 1)
+
+    # Exactly midnight in Kolkata
+    t_midnight = datetime.fromisoformat("2026-11-01T18:30:00+00:00").astimezone(KOLKATA_TZ)
+    assert t_midnight.date() == date(2026, 11, 2)

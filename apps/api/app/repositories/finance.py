@@ -1,9 +1,17 @@
 import asyncio
 import uuid
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Sequence
 
-from sqlalchemy import delete, select
+KOLKATA_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def get_kolkata_today() -> date:
+    """Return the current calendar date in Asia/Kolkata timezone."""
+    return datetime.now(KOLKATA_TZ).date()
+
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import selectinload
 
 from app.models.finance import (
@@ -74,6 +82,14 @@ async def _delete(session: Any, instance: Any) -> None:
         await res
 
 
+async def _refresh(session: Any, instance: Any) -> None:
+    """Refresh an instance supporting both AsyncSession and sync Session."""
+    if hasattr(session, "refresh"):
+        res = session.refresh(instance)
+        if asyncio.iscoroutine(res):
+            await res
+
+
 class FinanceRepository:
     """
     Database access layer for all Task B financial domain entities.
@@ -136,6 +152,7 @@ class FinanceRepository:
             self.session.add(profile)
 
         await _flush(self.session)
+        await _refresh(self.session, profile)
         return profile
 
     async def update_profile(self, owner_id: uuid.UUID, data: ProfileUpdate) -> Profile:
@@ -162,6 +179,7 @@ class FinanceRepository:
 
         profile.data_version += 1
         await _flush(self.session)
+        await _refresh(self.session, profile)
         return profile
 
     # -----------------------------------------------------------------------
@@ -341,6 +359,13 @@ class FinanceRepository:
         await _flush(self.session)
 
         for p in data.payments:
+            if p.payment_status != "paid":
+                if p.actual_paid_date is not None:
+                    raise ValueError("actual_paid_date cannot be set for non-paid payments")
+                p_paid_date = None
+            else:
+                p_paid_date = p.actual_paid_date or get_kolkata_today()
+
             payment = ObligationPayment(
                 obligation_id=obligation.id,
                 owner_id=owner_id,
@@ -349,7 +374,7 @@ class FinanceRepository:
                 interest_paise=p.interest_paise,
                 fee_paise=p.fee_paise,
                 payment_status=p.payment_status,
-                actual_paid_date=p.actual_paid_date,
+                actual_paid_date=p_paid_date,
             )
             self.session.add(payment)
 
@@ -443,12 +468,15 @@ class FinanceRepository:
     async def list_payments(
         self,
         owner_id: uuid.UUID,
+        obligation_id: uuid.UUID | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
         payment_status: str | None = None,
     ) -> Sequence[ObligationPayment]:
         """Fetch scheduled obligation payments for an owner with date-range filters."""
         stmt = select(ObligationPayment).where(ObligationPayment.owner_id == owner_id)
+        if obligation_id is not None:
+            stmt = stmt.where(ObligationPayment.obligation_id == obligation_id)
         if from_date is not None:
             stmt = stmt.where(ObligationPayment.due_date >= from_date)
         if to_date is not None:
@@ -483,7 +511,12 @@ class FinanceRepository:
             return None
 
         payment.payment_status = payment_status
-        payment.actual_paid_date = actual_paid_date
+        if payment_status == "paid":
+            payment.actual_paid_date = actual_paid_date or get_kolkata_today()
+        else:
+            if actual_paid_date is not None:
+                raise ValueError("actual_paid_date cannot be set for non-paid payments")
+            payment.actual_paid_date = None
         await self.increment_data_version(owner_id)
         await _flush(self.session)
         return payment
@@ -587,12 +620,14 @@ class FinanceRepository:
         return res.scalars().all()
 
     async def get_import_batch(
-        self, owner_id: uuid.UUID, batch_id: uuid.UUID
+        self, owner_id: uuid.UUID, batch_id: uuid.UUID, for_update: bool = False
     ) -> ImportBatch | None:
-        """Fetch a specific import batch belonging to the owner."""
+        """Fetch a specific import batch belonging to the owner, optionally locking row with FOR UPDATE."""
         stmt = select(ImportBatch).where(
             ImportBatch.id == batch_id, ImportBatch.owner_id == owner_id
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         res = await _exec(self.session, stmt)
         return res.scalar_one_or_none()
 
@@ -615,14 +650,56 @@ class FinanceRepository:
         await _flush(self.session)
         return batch
 
+    async def get_import_batch_by_idempotency(
+        self, owner_id: uuid.UUID, idempotency_key: str
+    ) -> ImportBatch | None:
+        """Fetch an import batch for an owner by its commit idempotency key."""
+        stmt = select(ImportBatch).where(
+            ImportBatch.owner_id == owner_id,
+            ImportBatch.idempotency_key == idempotency_key,
+        )
+        res = await _exec(self.session, stmt)
+        return res.scalar_one_or_none()
+
     async def update_import_batch_status(
         self,
         owner_id: uuid.UUID,
         batch_id: uuid.UUID,
         status: str,
         committed_at: datetime | None = None,
+        idempotency_key: str | None = None,
+        result_json: dict | list | None = None,
+        expected_status: str | None = None,
     ) -> ImportBatch | None:
-        """Update an import batch status upon commit."""
+        """
+        Update an import batch status upon commit.
+        If expected_status is supplied, performs an atomic conditional update.
+        """
+        if expected_status is not None:
+            values_dict: dict[str, Any] = {"status": status}
+            if committed_at is not None:
+                values_dict["committed_at"] = committed_at
+            if idempotency_key is not None:
+                values_dict["idempotency_key"] = idempotency_key
+            if result_json is not None:
+                values_dict["result_json"] = result_json
+
+            stmt = (
+                update(ImportBatch)
+                .where(
+                    ImportBatch.id == batch_id,
+                    ImportBatch.owner_id == owner_id,
+                    ImportBatch.status == expected_status,
+                )
+                .values(**values_dict)
+            )
+            res = await _exec(self.session, stmt)
+            rowcount = getattr(res, "rowcount", None)
+            if rowcount is not None and rowcount == 0:
+                return None
+            await _flush(self.session)
+            return await self.get_import_batch(owner_id, batch_id)
+
         batch = await self.get_import_batch(owner_id, batch_id)
         if batch is None:
             return None
@@ -630,8 +707,72 @@ class FinanceRepository:
         batch.status = status
         if committed_at is not None:
             batch.committed_at = committed_at
+        if idempotency_key is not None:
+            batch.idempotency_key = idempotency_key
+        if result_json is not None:
+            batch.result_json = result_json
         await _flush(self.session)
         return batch
+
+    async def find_obligation_by_source_ref(
+        self, owner_id: uuid.UUID, provider_alias: str, source_ref: str
+    ) -> Obligation | None:
+        """Find an existing obligation matching provider_alias and source_ref."""
+        stmt = (
+            select(Obligation)
+            .options(selectinload(Obligation.payments))
+            .where(
+                Obligation.owner_id == owner_id,
+                Obligation.provider_alias == provider_alias,
+                Obligation.source_ref == source_ref,
+            )
+        )
+        res = await _exec(self.session, stmt)
+        return res.scalar_one_or_none()
+
+    async def create_obligation_payment(
+        self,
+        owner_id: uuid.UUID,
+        obligation_id: uuid.UUID,
+        due_date: date,
+        amount_paise: int,
+        payment_status: str = "scheduled",
+        actual_paid_date: date | None = None,
+        interest_paise: int = 0,
+        fee_paise: int = 0,
+    ) -> ObligationPayment:
+        """
+        Create a single scheduled or paid obligation payment.
+        Validates that the parent obligation exists and belongs to owner_id.
+        """
+        ob = await self.get_obligation(owner_id, obligation_id)
+        if ob is None:
+            raise RecordNotFoundError(
+                f"Obligation {obligation_id} not found or does not belong to owner {owner_id}"
+            )
+
+        if payment_status != "paid":
+            if actual_paid_date is not None:
+                raise ValueError("actual_paid_date cannot be set for non-paid payments")
+            effective_paid_date = None
+        else:
+            effective_paid_date = actual_paid_date or get_kolkata_today()
+
+        payment = ObligationPayment(
+            obligation_id=obligation_id,
+            owner_id=owner_id,
+            due_date=due_date,
+            amount_paise=amount_paise,
+            interest_paise=interest_paise,
+            fee_paise=fee_paise,
+            payment_status=payment_status,
+            actual_paid_date=effective_paid_date,
+        )
+        self.session.add(payment)
+        if hasattr(self.session, "expire"):
+            self.session.expire(ob, ["payments"])
+        await _flush(self.session)
+        return payment
 
     # -----------------------------------------------------------------------
     # Engine C Financial Snapshot Builder

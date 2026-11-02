@@ -151,9 +151,13 @@ class ImportBatch(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     preview_json: Mapped[dict | list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     errors_json: Mapped[dict | list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result_json: Mapped[dict | list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index("ix_import_batches_created_at", "created_at"),
+        Index("ix_import_batches_idempotency_key", "idempotency_key"),
+        Index("ix_import_batches_owner_idempotency", "owner_id", "idempotency_key", unique=True),
     )
