@@ -137,8 +137,8 @@ class Goal(Base):
         ForeignKeyConstraint(
             ["contribution_rule_id", "owner_id"],
             ["cashflow_rules.id", "cashflow_rules.owner_id"],
-            ondelete="SET NULL",
-            name="fk_goals_cashflow_rule_owner",
+ondelete="NO ACTION",
+name="fk_goals_cashflow_rule_owner",
         ),
     )
 
